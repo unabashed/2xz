@@ -57,9 +57,9 @@ case $1 in --help|-[h?])  $prog; exit 1  ;; esac
     echo -e "
 ${LIGHTRED}Description:${NC}
     Converts all (well, a lot of) archive types into xz or tar.xz files.
-    Why do that? Because .xz compresses fairly better than .zip or .gz. I've seen one file.tar.gz 
-    of mine shrink from 32Mb to 8Mb when converted to .tar.xz — and that is because of the smart 
-    way xz handles compressing when many of the files are repeated or very similar in contents. 
+    Why do that? Because .xz compresses fairly better than .zip or .gz. I've seen a file.tar.gz 
+    shrink from 32Mb to 8Mb when converted to .tar.xz — and that is because of the smart 
+    way xz handles compressing when many of the files to be compressed are similar in contents.  
     For more, check:
     ${LIGHTPURPLE}https://en.wikipedia.org/wiki/Xz${NC}  and  ${LIGHTPURPLE}http://tukaani.org/xz/${NC}
 
