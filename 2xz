@@ -49,7 +49,7 @@ YELLOW='\e[1;33m'
 NC='\e[0m'  
 
 # Calling for help is the same as calling without arguments.
-case $1 in --help|-[h?])  $prog; exit 1  ;; esac
+case $1 in --help|-[h?])  $0; exit 1  ;; esac
 
 # Usage if argument isn't given
 [[ $# -eq 0 ]] && {
@@ -86,7 +86,7 @@ ${LIGHTRED}Limitations (not-exhaustive):${NC}
       I recommend ${YELLOW}detoxing${NC} those files. (${YELLOW}sudo apt-get install detox${NC})
 
 ${LIGHTRED}Final notes:${NC}
-    1) To extract a .xz, run: ${YELLOW}unxz MYFILE.xz${NC}.   To extract a .tar.xz, run: ${YELLOW}tar xvJf MYFILE.tar.xz${NC}
+    1) To extract a .xz, run: ${YELLOW}xz -d MYFILE.xz${NC}.   To extract a .tar.xz, run: ${YELLOW}tar xvJf MYFILE.tar.xz${NC}
     2) Note that unrar-free fails often. If you have only a few .rar, I'd suggest extracting them
        by hand with Peazip, and then recompressing the files normally to .tar.xz.
     3) USE IT AT YOUR OWN RISK. I wrote this carefully — but I suggest you back up your input files 
@@ -97,6 +97,8 @@ ${LIGHTRED}Final notes:${NC}
      exit 1
 }
 
+ # TODO: more error handling (e.g.: if mktemp or achive extraction fails)
+ 
  # TODO: add other formats not yet covered
 
  # TODO:  frill: add  a flag  option to  a  pv pipe  to show  progress bar  when
@@ -106,7 +108,7 @@ ${LIGHTRED}Final notes:${NC}
 #----------------------------------------------------------------------------
 # Check for missing commands
 
-needed_commands="sed gunzip bunzip2 unxz xz tar"
+needed_commands="sed xz tar"  
 
 missing_counter=0
 for needed_command in $needed_commands; do
@@ -125,9 +127,25 @@ elif [[ $missing_counter -gt 1 ]]; then
 fi
 #----------------------------------------------------------------------------
 
-
-mydir=$(pwd)
+mydir="$PWD"
 oldarchivesdir="$mydir/OldArchives"
+
+# Environment flag: defaults xz compression to maximum
+export XZ_OPT=${XZ_OPT:-"-9"}
+
+# Initialize variable defining if original file was .xz, .tar.xz or .txz
+originalWasXZ=0  # defaults to not
+
+# Create flag to indicate whether or not to back up originals. Default is yes.
+case $1 in
+    -n|--no-backup)
+        backup=0
+        shift
+    ;;
+    *)
+        backup=1
+    ;;
+esac
 
 find_extension ()
 # Gets the full extension of the file.
@@ -145,20 +163,6 @@ find_extension ()
     echo "${ext2}${ext1}"
 }
 
-# Create flag to indicate whether or not to back up originals. Default is yes.
-case $1 in
-    -n|--no-backup)
-        backup=0
-        shift
-    ;;
-    *)
-        backup=1
-    ;;
-esac
-
-# Initialize variable defining if original file was .xz, .tar.xz or .txz
-originalWasXZ=0  # defaults to not
-
 # Process each argument
 for argument in "$@"; do
     canonical=$(readlink --canonicalize "${argument}")
@@ -171,14 +175,14 @@ for argument in "$@"; do
  
     # Is it a directory? tar.xz it. The original directory will be kept.
     if   [[ -d "$canonical" ]]; then
-        (cd "$canonical" && tar --create --atime-preserve * | xz -9 - > "$canonical.tar.xz")
+        (cd "$canonical" && tar --create --atime-preserve * | xz - > "$canonical.tar.xz")
 
     # Oh, it's a file then? Very well.
     elif [[ -f "$canonical" ]]; then
         case "$canonical" in
             # Multiple-file extraction; must use $mytempdir
             *.zip | *.jar | *.7z | *.rar | *.ar | *.cbz | *.cb7 | *.cbr)
-                mkdir -p $home/tmp && mytempdir=`mktemp --tmpdir=$home/tmp -d ${prog}.XXXXXXXXXX`
+                mytempdir=$(mktemp --tmpdir=$"$TMPDIR" ${PROG}.XXXXXXXXXX)
                 cd "$mytempdir"
                 case "$canonical" in
                     *.zip | *.jar | *.cbz)   unzip -q -d .  "$canonical"    ;;
@@ -187,11 +191,11 @@ for argument in "$@"; do
                     *.ar)                    ar x           "$canonical"    ;;
                     *)                       echo "Can't happen..."         ;;
                 esac
-                tar --create --atime-preserve . | xz -9 - > "${pathbasename}.tar.xz"
+                tar --create --atime-preserve . | xz - > "${pathbasename}.tar.xz"
                 # IF not error in any of the pipes of previous command AND backup flag is off
                 # THEN delete original file.
-                [[ ! $(echo ${PIPESTATUS[@]}) =~ 1 ]] && [[ $backup = 0 ]] && rm --force "$canonical" 
-                [[ $backup = 1 ]] && mkdir -p $oldarchivesdir && mv "$canonical" ${oldarchivesdir}/
+                [[ $(echo ${PIPESTATUS[@]}) =~ 0 ]] && [[ $backup = 0 ]] && rm --force "$canonical" 
+                [[ $backup = 1 ]] && mkdir -p "$oldarchivesdir" && mv "$canonical" "${oldarchivesdir}/"
 
                 rm --recursive --force $mytempdir
                 cd "$mydir"
@@ -201,45 +205,45 @@ for argument in "$@"; do
             # Single-file extraction (we won't "untar")
             *.tar.* | *.tgz | *.tbz | *.tbz2 | *.tzo | *.tlz | *.txz)
                 case "$canonical" in
-                    *.tar.gz | *.tgz | *.tar.Z)       gunzip -c "$canonical" | xz -9 - > "${pathbasename}.tar.xz" ;;
-                    *.tar.bz|*.tar.bz2|*.tbz|*.tbz2) bunzip2 -c "$canonical" | xz -9 - > "${pathbasename}.tar.xz" ;;
-                    *.tar.lzma)                       unlzma -c "$canonical" | xz -9 - > "${pathbasename}.tar.xz" ;;
-                    *.tar.lzo | .tzo)      lzop --decompress -c "$canonical" | xz -9 - > "${pathbasename}.tar.xz" ;;
-                    *.tar.lz |.tlz) lzip --keep --decompress -c "$canonical" | xz -9 - > "${pathbasename}.tar.xz" ;;
-                    *.tar.xz |*.txz)                    unxz -c "$canonical" | xz -9 - > "${pathbasename}.tx" && 
+                    *.tar.gz | *.tgz | *.tar.Z)       gunzip -c "$canonical" | xz - > "${pathbasename}.tar.xz" ;;
+                    *.tar.bz|*.tar.bz2|*.tbz|*.tbz2) bunzip2 -c "$canonical" | xz - > "${pathbasename}.tar.xz" ;;
+                    *.tar.lzma)                       unlzma -c "$canonical" | xz - > "${pathbasename}.tar.xz" ;;
+                    *.tar.lzo | .tzo)      lzop --decompress -c "$canonical" | xz - > "${pathbasename}.tar.xz" ;;
+                    *.tar.lz |.tlz) lzip --keep --decompress -c "$canonical" | xz - > "${pathbasename}.tar.xz" ;;
+                    *.tar.xz |*.txz)                   xz -d -c "$canonical" | xz - > "${pathbasename}.tx" && 
                         mv "${pathbasename}.tx" "${pathbasename}.tar.xz" && 
                         originalWasXZ=1 ;;
                 esac
-                [[ ! $(echo ${PIPESTATUS[@]}) =~ 1 ]] && [[ $backup = 0 ]] && rm --force "$canonical" 
+                [[ $(echo ${PIPESTATUS[@]}) =~ 0 ]] && [[ $backup = 0 ]] && rm --force "$canonical" 
                 [[ $originalWasXZ = 1 ]] || {
                     [[ $backup = 1 ]] && 
-                    mkdir -p $oldarchivesdir && 
-                    mv "$canonical" ${oldarchivesdir}/
+                    mkdir -p "$oldarchivesdir" && 
+                    mv "$canonical" "${oldarchivesdir}/"
                 }
             ;;
 
             *.gz | *.Z | *.bz | *.bz2 | *.lzma | *.lzo | *.lz | *.xz)
                 case "$canonical" in
-                    *.gz | *.Z)              gunzip -c "$canonical" | xz -9 - > "${pathbasename}.xz" ;;
-                    *.bz | *.bz2)           bunzip2 -c "$canonical" | xz -9 - > "${pathbasename}.xz" ;;
-                    *.lzma)                  unlzma -c "$canonical" | xz -9 - > "${pathbasename}.xz" ;;
-                    *.lzo)        lzop --decompress -c "$canonical" | xz -9 - > "${pathbasename}.xz" ;;
-                    *.lz)  lzip --keep --decompress -c "$canonical" | xz -9 - > "${pathbasename}.xz" ;;
-                    *.xz)                      unxz -c "$canonical" | xz -9 - > "${pathbasename}.x"  &&
+                    *.gz | *.Z)              gunzip -c "$canonical" | xz - > "${pathbasename}.xz" ;;
+                    *.bz | *.bz2)           bunzip2 -c "$canonical" | xz - > "${pathbasename}.xz" ;;
+                    *.lzma)                  unlzma -c "$canonical" | xz - > "${pathbasename}.xz" ;;
+                    *.lzo)        lzop --decompress -c "$canonical" | xz - > "${pathbasename}.xz" ;;
+                    *.lz)  lzip --keep --decompress -c "$canonical" | xz - > "${pathbasename}.xz" ;;
+                    *.xz)                     xz -d -c "$canonical" | xz - > "${pathbasename}.x"  &&
                         mv "${pathbasename}.x" "${pathbasename}.xz" && 
                         originalWasXZ=1 ;;
                 esac
-                [[ ! $(echo ${PIPESTATUS[@]}) =~ 1 ]] && [[ $backup = 0 ]] && rm --force "$canonical" 
+                [[ $(echo ${PIPESTATUS[@]}) =~ 0 ]] && [[ $backup = 0 ]] && rm --force "$canonical" 
                 [[ $originalWasXZ = 1 ]] || {
                     [[ $backup = 1 ]] && 
-                    mkdir -p $oldarchivesdir && 
-                    mv "$canonical" ${oldarchivesdir}/
+                    mkdir -p "$oldarchivesdir" && 
+                    mv "$canonical" "${oldarchivesdir}/"
                 }
             ;;
 
             # All else, including *.tar, *.cbt and non-archives, etc: just xz them individually
             # No backup is made here, even without adding the -n flag.
-            *)                                   xz -9 "$canonical" ;;
+            *)                                   xz "$canonical" ;;
         esac
     else
         echo >&2 "'$1' does not exist"
