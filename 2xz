@@ -182,7 +182,7 @@ for argument in "$@"; do
         case "$canonical" in
             # Multiple-file extraction; must use $mytempdir
             *.zip | *.jar | *.7z | *.rar | *.ar | *.cbz | *.cb7 | *.cbr)
-                mytempdir=$(mktemp --tmpdir=$"$TMPDIR" ${PROG}.XXXXXXXXXX)
+                mytempdir=$(mktemp --tmpdir=$"$TMPDIR" ${prog}.XXXXXXXXXX)
                 cd "$mytempdir"
                 case "$canonical" in
                     *.zip | *.jar | *.cbz)   unzip -q -d .  "$canonical"    ;;
